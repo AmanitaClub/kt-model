@@ -8,7 +8,10 @@ html,body{margin:0;height:100%;background:#101318;color:#e8e8e8;font-family:-app
 #app{display:flex;height:100vh;height:100dvh}
 #panel{flex:0 0 300px;width:300px;box-sizing:border-box;overflow-y:auto;padding:14px 14px 20px;border-right:1px solid #2a2f38;background:#151922}
 #plotwrap{flex:1 1 auto;min-width:0;min-height:0;position:relative}
-#model{position:absolute;inset:0}
+#model{position:absolute;inset:0;touch-action:none}
+.zoom{position:absolute;right:10px;bottom:10px;z-index:5;display:flex;flex-direction:column;gap:8px}
+.zoom button{width:44px;height:44px;border-radius:10px;border:1px solid #384152;background:rgba(35,41,55,.9);color:#e8e8e8;font-size:24px;line-height:1;cursor:pointer;padding:0}
+.zoom button:active{background:#2f3747}
 h1{font-size:16px;margin:0 0 4px}
 .note{font-size:12px;color:#9aa0a6;margin:0 0 10px;line-height:1.35}
 .grp{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#8b93a1;margin:12px 0 4px}
@@ -31,7 +34,7 @@ h1{font-size:16px;margin:0 0 4px}
 <div id="panel">
   <h1>3D-модель по КТ от 22.10.2026</h1>
   <p class="note">Забрюшинная опухоль. Модель построена ИИ-ассистентом автоматически по снимкам и приблизительна; это не медицинский документ.<br>
-  Вращение — одним пальцем или мышью, приближение — двумя пальцами или колесом.</p>
+  Вращение — одним пальцем или мышью, приближение — двумя пальцами (щипком), колесом или кнопками ＋/− в углу модели.</p>
   <div class="grp">Вид</div>
   <div class="btns">
     <button data-v="front">Спереди</button><button data-v="right">Справа</button><button data-v="left">Слева</button>
@@ -60,7 +63,7 @@ h1{font-size:16px;margin:0 0 4px}
   </div>
   <div class="ori">При виде спереди правая сторона пациентки — слева на экране, как при взгляде на человека лицом к лицу.</div>
 </div>
-<div id="plotwrap"><div style="height:100%; width:100%;">                        <script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+<div id="plotwrap"><div class="zoom"><button type="button" data-z="in" aria-label="Приблизить">＋</button><button type="button" data-z="out" aria-label="Отдалить">−</button></div><div style="height:100%; width:100%;">                        <script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
         <script>/**
 * plotly.js v4.1.1
 * Copyright 2012-2026, Plotly, Inc.
@@ -3696,6 +3699,39 @@ return Plotly;
             top:{eye:{x:0,y:-0.01,z:2.6},up:{x:0,y:-1,z:0}}};
   document.querySelectorAll('[data-v]').forEach(function(btn){btn.addEventListener('click',function(){
     var c=cams[btn.dataset.v];Plotly.relayout(gd,{'scene.camera.eye':c.eye,'scene.camera.up':c.up,'scene.camera.center':{x:0,y:0,z:0}});});});
+  // Приближение: Plotly gl3d на сенсорных экранах обрабатывает только первое касание, щипок добавлен отдельно
+  function zoomCam(cam,f){
+    var c=cam.center,e=cam.eye,v={x:e.x-c.x,y:e.y-c.y,z:e.z-c.z},d=Math.sqrt(v.x*v.x+v.y*v.y+v.z*v.z)||1;
+    var nd=Math.min(8,Math.max(0.15,d*f)),k=nd/d;
+    return {x:c.x+v.x*k,y:c.y+v.y*k,z:c.z+v.z*k};
+  }
+  function scene(){return gd._fullLayout&&gd._fullLayout.scene&&gd._fullLayout.scene._scene;}
+  document.querySelectorAll('[data-z]').forEach(function(btn){btn.addEventListener('click',function(){
+    var sc=scene();if(!sc)return;var cam=sc.getCamera();
+    Plotly.relayout(gd,{'scene.camera.eye':zoomCam(cam,btn.dataset.z==='in'?0.8:1.25)});});});
+  var pinch=null;
+  function dist(t){var dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.sqrt(dx*dx+dy*dy)||1;}
+  gd.addEventListener('touchstart',function(ev){
+    if(ev.touches.length<2)return;
+    var sc=scene();if(!sc)return;
+    ev.stopPropagation();ev.preventDefault();
+    pinch={d0:dist(ev.touches),cam:sc.getCamera()};
+  },{capture:true,passive:false});
+  gd.addEventListener('touchmove',function(ev){
+    if(!pinch)return;
+    ev.stopPropagation();ev.preventDefault();
+    if(ev.touches.length<2)return;
+    var sc=scene(),cam=pinch.cam,e=zoomCam(cam,pinch.d0/dist(ev.touches));
+    sc.camera.lookAt([e.x,e.y,e.z],[cam.center.x,cam.center.y,cam.center.z],[cam.up.x,cam.up.y,cam.up.z]);
+  },{capture:true,passive:false});
+  function pinchEnd(ev){
+    if(!pinch)return;
+    if(ev.touches.length>0){ev.stopPropagation();return;}
+    pinch=null;
+    var sc=scene();if(sc)Plotly.relayout(gd,{'scene.camera':sc.getCamera()});
+  }
+  gd.addEventListener('touchend',pinchEnd,{capture:true,passive:true});
+  gd.addEventListener('touchcancel',pinchEnd,{capture:true,passive:true});
   window.addEventListener('orientationchange',function(){setTimeout(function(){Plotly.Plots.resize(gd);},300);});
 })();
 </script>
